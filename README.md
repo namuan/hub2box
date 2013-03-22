@@ -17,4 +17,3 @@ How it works?
 
 Todo list
 - IMAP message handling
-- External/Environment based configuratiom
