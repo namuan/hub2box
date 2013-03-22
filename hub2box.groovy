@@ -39,13 +39,11 @@ public class CloneJob {
     }
 }
 
+
+
 def camelCtx = new DefaultCamelContext()
 
 class GroovyMailRoute extends RouteBuilder {
-
-    // externalise configuration
-    def emailAddress = "youremailaddress@gmail.com"
-    def emailPassword = "youremailpassword"
 
     // TODO: To handle multipart messages
     static def String getBody(exchangeBody) {
@@ -65,6 +63,15 @@ class GroovyMailRoute extends RouteBuilder {
 
     @Override
     void configure(){
+
+        def env = System.getenv()
+
+        // externalise configuration
+        def emailAddress = env['EMAIL']
+        def emailPassword = env['PASSWORD']
+
+        println "Using email: ${emailAddress}"
+
         from("imaps://imap.gmail.com?username=" + emailAddress
                                  + "&password=" + emailPassword
                                  + "&consumer.delay=30000")
