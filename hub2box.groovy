@@ -19,10 +19,16 @@ import org.apache.camel.Exchange.*
 public class CloneJob {
 
     public static String regex = /(github.com\/.*)/
+    public static String emailRegex = /.*\<(.*)\>/
 
     String name
     String url
     
+    def void setName(fromEmail) {
+        def matcher = fromEmail =~ emailRegex
+        this.name = (matcher.size() ? matcher[0][1] : null) 
+    }
+
     def void setUrl(mailBody) {
         def matcher = mailBody =~ regex
         this.url = "http://" + (matcher.size() ? matcher[0][1] : null)
@@ -38,10 +44,6 @@ public class CloneJob {
         }
     }
 }
-
-
-
-def camelCtx = new DefaultCamelContext()
 
 class GroovyMailRoute extends RouteBuilder {
 
@@ -61,6 +63,14 @@ class GroovyMailRoute extends RouteBuilder {
         return mailBody
     }
 
+    def getUser(emailAddress) {
+        def matcher = emailAddress =~ /(.*)@.*/
+        if (matcher.size())
+            return matcher[0][1]
+
+        return null
+    }
+
     @Override
     void configure(){
 
@@ -69,6 +79,10 @@ class GroovyMailRoute extends RouteBuilder {
         // externalise configuration
         def emailAddress = env['EMAIL']
         def emailPassword = env['PASSWORD']
+        def smtpUser = getUser(emailAddress)
+
+        if (!emailAddress || !emailPassword || !smtpUser)
+            throw new IllegalArgumentException("Email address/SMTP user or password missing. Set environment variables EMAIL and PASSWORD")
 
         println "Using email: ${emailAddress}"
 
@@ -79,21 +93,31 @@ class GroovyMailRoute extends RouteBuilder {
             .process(new Processor() {
                 def void process(Exchange exchange) {
                     def cloneJob = new CloneJob()
-                    cloneJob.name = exchange.in.headers.from
+                    cloneJob.setName(exchange.in.headers.from)
                     cloneJob.setUrl(exchange.in.body)
                     exchange.out.body = cloneJob.url
                     exchange.out.setHeader(Exchange.FILE_NAME, cloneJob.projectName)
+                    exchange.out.setHeader("to", cloneJob.name)
+                    exchange.out.setHeader("from", emailAddress)
+                    exchange.out.setHeader("subject", ">> Hub2Box notification for repo: ${cloneJob.url}")
+
                     println("Picked up new message from: ${cloneJob.name} for repo: ${cloneJob.url}")
                 }
             })
+            .to("smtps://smtp.gmail.com?username=" + smtpUser 
+                    + "&password=" + emailPassword
+                    + "&contentType=text/html")
             .to('file://jobs')
             .to('exec://sh?args=clone_and_sync.sh')
-            //.to("log:groovymail?showAll=true&multiline=true")
+            .to("log:groovymail?showAll=true&multiline=true")
     }
 }
 
-camelCtx.addRoutes(new GroovyMailRoute());
-camelCtx.start();
+
+def camelCtx = new DefaultCamelContext()
+camelCtx.addRoutes(new GroovyMailRoute())
+//camelCtx.setTracing(true)
+camelCtx.start()
 
 addShutdownHook{ camelContext.stop() }
 synchronized(this){ this.wait() }

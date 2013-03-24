@@ -42,3 +42,6 @@
 # other
 *.iws
 
+/done
+/inprogress
+/jobs
